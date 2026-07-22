@@ -14,13 +14,139 @@ from wordcloud import WordCloud
 # 페이지 기본 설정
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="유튜브 댓글 분석기",
-    page_icon="💬",
+    page_title="유튜브 댓글 언어 분석기",
+    page_icon="🗨️",
     layout="wide",
 )
 
-st.title("💬 유튜브 댓글 분석기")
-st.caption("3단계 · 댓글 수집, 단어 빈도 분석, 워드클라우드")
+# ---------------------------------------------------------
+# 화면 디자인
+# ---------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background:
+            radial-gradient(circle at 8% 8%, rgba(255, 0, 0, 0.08), transparent 24rem),
+            radial-gradient(circle at 92% 18%, rgba(72, 84, 255, 0.08), transparent 26rem),
+            linear-gradient(180deg, #fffdfd 0%, #f7f8fc 100%);
+    }
+
+    .block-container {
+        max-width: 1250px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+    }
+
+    .hero-card {
+        position: relative;
+        overflow: hidden;
+        padding: 2.2rem 2.4rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid rgba(32, 38, 57, 0.09);
+        border-radius: 26px;
+        background: linear-gradient(135deg, #ffffff 0%, #fff5f5 52%, #f1f3ff 100%);
+        box-shadow: 0 18px 50px rgba(31, 38, 70, 0.10);
+    }
+
+    .hero-card::after {
+        content: "말 · 의미 · 빈도 · 담화";
+        position: absolute;
+        right: 1.5rem;
+        top: 1rem;
+        font-size: 0.88rem;
+        letter-spacing: 0.12rem;
+        color: rgba(55, 62, 92, 0.42);
+    }
+
+    .hero-title {
+        margin: 0;
+        font-size: clamp(2rem, 5vw, 3.3rem);
+        font-weight: 850;
+        line-height: 1.08;
+        color: #202639;
+    }
+
+    .hero-title span {
+        color: #ff0033;
+    }
+
+    .hero-copy {
+        max-width: 760px;
+        margin-top: 0.9rem;
+        margin-bottom: 0;
+        color: #596078;
+        font-size: 1.03rem;
+        line-height: 1.75;
+    }
+
+    .linguistic-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin-top: 1.2rem;
+    }
+
+    .linguistic-token {
+        padding: 0.42rem 0.72rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(69, 78, 113, 0.12);
+        color: #3e4663;
+        font-size: 0.87rem;
+        font-weight: 650;
+    }
+
+    div[data-testid="stMetric"] {
+        padding: 1rem 1.1rem;
+        border: 1px solid rgba(36, 44, 73, 0.09);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 10px 30px rgba(35, 43, 77, 0.06);
+    }
+
+    div[data-testid="stDataFrame"] {
+        border: 1px solid rgba(36, 44, 73, 0.09);
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
+    .section-note {
+        margin: -0.25rem 0 1rem 0;
+        color: #697087;
+        font-size: 0.93rem;
+    }
+
+    .analysis-card {
+        padding: 1rem 1.1rem;
+        border-radius: 18px;
+        border: 1px solid rgba(36, 44, 73, 0.09);
+        background: rgba(255, 255, 255, 0.80);
+    }
+
+    .stButton > button,
+    .stDownloadButton > button {
+        border-radius: 12px;
+        font-weight: 700;
+    }
+    </style>
+
+    <div class="hero-card">
+        <h1 class="hero-title">YouTube 댓글 <span>언어 분석기</span></h1>
+        <p class="hero-copy">
+            영상 댓글을 수집하고, 어휘 빈도와 워드클라우드를 통해
+            온라인 담화에 반복되는 표현과 관심사를 탐색합니다.
+        </p>
+        <div class="linguistic-strip">
+            <span class="linguistic-token">형태 · word</span>
+            <span class="linguistic-token">빈도 · frequency</span>
+            <span class="linguistic-token">담화 · discourse</span>
+            <span class="linguistic-token">댓글 · comment</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ---------------------------------------------------------
@@ -34,53 +160,37 @@ EXAMPLE_2 = "https://youtu.be/I9vK5EVTt0U?si=NEZ8L7MRuNvrzINa"
 # 유튜브 링크에서 영상 ID를 추출하는 함수
 # ---------------------------------------------------------
 def extract_video_id(url: str) -> str | None:
-    """
-    유튜브 영상 주소에서 11자리 영상 ID를 추출합니다.
-
-    지원 예시
-    - https://youtu.be/d95J8yzvjbQ?si=...
-    - https://www.youtube.com/watch?v=d95J8yzvjbQ
-    - https://youtube.com/watch?v=d95J8yzvjbQ&t=10s
-    - https://www.youtube.com/shorts/d95J8yzvjbQ
-    """
+    """유튜브 영상 주소에서 11자리 영상 ID를 추출합니다."""
 
     if not url:
         return None
 
     url = url.strip()
 
-    # 사용자가 https://를 빼고 입력한 경우 자동으로 붙입니다.
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
     try:
         parsed_url = urlparse(url)
         host = parsed_url.netloc.lower()
-
-        # 주소 앞의 www. 또는 m.을 제거합니다.
         host = host.removeprefix("www.")
         host = host.removeprefix("m.")
 
         video_id = None
 
-        # youtu.be/영상ID 형식
         if host == "youtu.be":
             video_id = parsed_url.path.lstrip("/").split("/")[0]
 
-        # youtube.com 형식
         elif host in {"youtube.com", "music.youtube.com"}:
-            # youtube.com/watch?v=영상ID 형식
             if parsed_url.path == "/watch":
                 query = parse_qs(parsed_url.query)
                 video_id = query.get("v", [None])[0]
 
-            # shorts, embed, live 형식도 함께 처리합니다.
             elif parsed_url.path.startswith(("/shorts/", "/embed/", "/live/")):
                 path_parts = parsed_url.path.strip("/").split("/")
                 if len(path_parts) >= 2:
                     video_id = path_parts[1]
 
-        # 유튜브 영상 ID는 영문, 숫자, _, -로 이루어진 11자리입니다.
         if video_id and re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
             return video_id
 
@@ -91,46 +201,67 @@ def extract_video_id(url: str) -> str | None:
 
 
 # ---------------------------------------------------------
-# YouTube Data API에서 댓글을 가져오는 함수
+# YouTube Data API에서 댓글을 여러 페이지에 걸쳐 가져오는 함수
 # ---------------------------------------------------------
-def fetch_youtube_comments(video_id: str, api_key: str) -> list[dict]:
+def fetch_youtube_comments(
+    video_id: str,
+    api_key: str,
+    requested_count: int,
+) -> list[dict]:
     """
-    YouTube Data API v3의 commentThreads 창구에서
-    상위 댓글을 최대 100개 가져옵니다.
+    commentThreads API를 반복 호출해 댓글을 최대 1,000개 가져옵니다.
+
+    API 한 번에 최대 100개까지 받을 수 있으므로,
+    nextPageToken이 있을 때 다음 페이지를 계속 요청합니다.
     """
 
     api_url = "https://www.googleapis.com/youtube/v3/commentThreads"
-
-    params = {
-        "part": "snippet",
-        "videoId": video_id,
-        "maxResults": 100,
-        "order": "relevance",
-        "textFormat": "plainText",
-        "key": api_key,
-    }
-
-    response = requests.get(
-        api_url,
-        params=params,
-        timeout=15,
-    )
-
-    # 400, 403, 404 등의 HTTP 오류가 있으면 예외를 발생시킵니다.
-    response.raise_for_status()
-
-    data = response.json()
     comments = []
+    next_page_token = None
 
-    for item in data.get("items", []):
-        top_comment = item["snippet"]["topLevelComment"]["snippet"]
+    while len(comments) < requested_count:
+        remaining_count = requested_count - len(comments)
 
-        comments.append(
-            {
-                "댓글": top_comment.get("textOriginal", ""),
-                "좋아요 수": int(top_comment.get("likeCount", 0)),
-            }
+        params = {
+            "part": "snippet",
+            "videoId": video_id,
+            "maxResults": min(100, remaining_count),
+            "order": "relevance",
+            "textFormat": "plainText",
+            "key": api_key,
+        }
+
+        if next_page_token:
+            params["pageToken"] = next_page_token
+
+        response = requests.get(
+            api_url,
+            params=params,
+            timeout=20,
         )
+        response.raise_for_status()
+
+        data = response.json()
+
+        for item in data.get("items", []):
+            top_comment = item["snippet"]["topLevelComment"]["snippet"]
+
+            comments.append(
+                {
+                    "댓글": top_comment.get("textOriginal", ""),
+                    "좋아요 수": int(top_comment.get("likeCount", 0)),
+                    "작성일": top_comment.get("publishedAt", ""),
+                }
+            )
+
+            if len(comments) >= requested_count:
+                break
+
+        next_page_token = data.get("nextPageToken")
+
+        # 더 가져올 페이지가 없으면 반복을 끝냅니다.
+        if not next_page_token:
+            break
 
     return comments
 
@@ -140,42 +271,25 @@ def fetch_youtube_comments(video_id: str, api_key: str) -> list[dict]:
 # ---------------------------------------------------------
 def extract_words(comments: pd.Series) -> list[str]:
     """
-    댓글 전체에서 한국어와 영어 단어를 추출합니다.
-
-    - 영어는 모두 소문자로 바꿉니다.
-    - 한 글자짜리 단어는 제외합니다.
+    한국어와 영어 단어를 추출합니다.
+    영어는 소문자로 통일하고 한 글자짜리 단어는 제외합니다.
     """
 
     all_words = []
 
     for comment in comments.fillna("").astype(str):
         normalized_comment = comment.lower()
-
-        # 한국어 또는 영어가 연속된 부분을 단어로 봅니다.
         words = re.findall(r"[가-힣A-Za-z]+", normalized_comment)
-
-        # 한 글자짜리 단어는 제외합니다.
         words = [word for word in words if len(word) >= 2]
-
         all_words.extend(words)
 
     return all_words
 
 
-# ---------------------------------------------------------
-# 댓글 전체에서 자주 나온 단어를 세는 함수
-# ---------------------------------------------------------
 def count_top_words(comments: pd.Series, top_n: int = 20) -> pd.DataFrame:
-    """
-    모든 댓글을 단어로 나누고 자주 나온 단어를 셉니다.
+    """자주 나온 단어 상위 n개를 표로 만듭니다."""
 
-    - 한국어와 영어 단어를 모두 찾습니다.
-    - 영어는 대문자와 소문자를 같은 단어로 처리합니다.
-    - 한 글자짜리 단어는 제외합니다.
-    """
-
-    all_words = extract_words(comments)
-    word_counts = Counter(all_words).most_common(top_n)
+    word_counts = Counter(extract_words(comments)).most_common(top_n)
 
     return pd.DataFrame(
         word_counts,
@@ -184,17 +298,11 @@ def count_top_words(comments: pd.Series, top_n: int = 20) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------
-# 한글 폰트 파일을 내려받는 함수
+# 한글 폰트 파일 다운로드
 # ---------------------------------------------------------
 @st.cache_resource
 def download_korean_font() -> str | None:
-    """
-    워드클라우드에서 한글이 깨지지 않도록
-    나눔고딕 폰트 파일을 내려받습니다.
-
-    성공하면 폰트 파일 경로를 반환하고,
-    실패하면 None을 반환합니다.
-    """
+    """워드클라우드용 나눔고딕 폰트를 내려받습니다."""
 
     font_url = (
         "https://raw.githubusercontent.com/google/fonts/main/"
@@ -204,22 +312,16 @@ def download_korean_font() -> str | None:
     font_dir = Path(".streamlit_fonts")
     font_path = font_dir / "NanumGothic-Regular.ttf"
 
-    # 이미 폰트 파일이 있으면 다시 내려받지 않습니다.
     if font_path.exists() and font_path.stat().st_size > 0:
         return str(font_path)
 
     try:
         font_dir.mkdir(parents=True, exist_ok=True)
 
-        response = requests.get(
-            font_url,
-            timeout=20,
-        )
+        response = requests.get(font_url, timeout=20)
         response.raise_for_status()
-
         font_path.write_bytes(response.content)
 
-        # 파일이 비어 있으면 다운로드 실패로 처리합니다.
         if font_path.stat().st_size == 0:
             font_path.unlink(missing_ok=True)
             return None
@@ -230,18 +332,9 @@ def download_korean_font() -> str | None:
         return None
 
 
-# ---------------------------------------------------------
-# 워드클라우드 이미지를 만드는 함수
-# ---------------------------------------------------------
-def make_wordcloud_image(
-    comments: pd.Series,
-    font_path: str,
-):
+def make_wordcloud_image(comments: pd.Series, font_path: str):
     """
-    댓글 전체를 이용해 워드클라우드 이미지를 만듭니다.
-
-    matplotlib은 사용하지 않고, WordCloud가 만든
-    PIL 이미지 객체를 그대로 반환합니다.
+    matplotlib 없이 WordCloud가 만든 PIL 이미지를 반환합니다.
     """
 
     words = extract_words(comments)
@@ -264,7 +357,7 @@ def make_wordcloud_image(
 
 
 # ---------------------------------------------------------
-# 입력창과 분석 결과의 세션 상태 초기화
+# 세션 상태 초기화
 # ---------------------------------------------------------
 if "youtube_url" not in st.session_state:
     st.session_state.youtube_url = EXAMPLE_1
@@ -275,11 +368,18 @@ if "comments_df" not in st.session_state:
 if "result_video_id" not in st.session_state:
     st.session_state.result_video_id = None
 
+if "requested_count" not in st.session_state:
+    st.session_state.requested_count = 100
+
 
 # ---------------------------------------------------------
-# 예시 버튼
+# 입력 영역
 # ---------------------------------------------------------
-st.subheader("영상 링크 입력")
+st.subheader("1. 분석할 영상과 댓글 수 설정")
+st.markdown(
+    '<p class="section-note">영상 주소를 넣고 수집할 댓글 수를 10개부터 1,000개까지 지정합니다.</p>',
+    unsafe_allow_html=True,
+)
 
 button_col1, button_col2 = st.columns(2)
 
@@ -297,19 +397,27 @@ with button_col2:
     ):
         st.session_state.youtube_url = EXAMPLE_2
 
+input_col1, input_col2 = st.columns([3, 1])
 
-# ---------------------------------------------------------
-# 유튜브 링크 입력창
-# ---------------------------------------------------------
-youtube_url = st.text_input(
-    "유튜브 영상 링크",
-    key="youtube_url",
-    placeholder="https://www.youtube.com/watch?v=...",
-    label_visibility="collapsed",
-)
+with input_col1:
+    youtube_url = st.text_input(
+        "유튜브 영상 링크",
+        key="youtube_url",
+        placeholder="https://www.youtube.com/watch?v=...",
+    )
+
+with input_col2:
+    requested_count = st.number_input(
+        "가져올 댓글 수",
+        min_value=10,
+        max_value=1000,
+        step=10,
+        key="requested_count",
+        help="영상에 공개된 댓글이 적으면 지정한 수보다 적게 수집될 수 있습니다.",
+    )
 
 analyze_button = st.button(
-    "댓글 가져오기",
+    "댓글 수집 및 분석 시작",
     type="primary",
     use_container_width=True,
 )
@@ -328,7 +436,6 @@ if analyze_button:
         )
         st.stop()
 
-    # Streamlit Cloud의 비밀 금고에서 API 키를 읽습니다.
     try:
         api_key = st.secrets["YOUTUBE_API_KEY"]
     except KeyError:
@@ -340,31 +447,35 @@ if analyze_button:
         st.stop()
 
     try:
-        with st.spinner("유튜브 댓글을 가져오는 중입니다..."):
-            comments = fetch_youtube_comments(video_id, api_key)
+        with st.spinner(
+            f"댓글을 최대 {requested_count:,}개까지 가져오고 있습니다..."
+        ):
+            comments = fetch_youtube_comments(
+                video_id=video_id,
+                api_key=api_key,
+                requested_count=int(requested_count),
+            )
 
     except requests.exceptions.Timeout:
         st.error(
             "유튜브 서버의 응답이 늦어 댓글을 가져오지 못했습니다. "
-            "잠시 후 다시 시도해 주세요."
+            "댓글 수를 줄이거나 잠시 후 다시 시도해 주세요."
         )
         st.stop()
 
     except requests.exceptions.HTTPError as error:
         status_code = error.response.status_code if error.response else None
 
-        api_message = ""
-
         try:
             error_data = error.response.json()
             api_message = error_data.get("error", {}).get("message", "")
         except Exception:
-            pass
+            api_message = ""
 
         if status_code == 403:
             st.error(
                 "댓글을 가져올 수 없습니다. 댓글이 비활성화된 영상이거나, "
-                "API 키 설정 또는 YouTube Data API 사용 권한을 확인해야 합니다."
+                "API 키의 YouTube Data API 사용 권한 또는 할당량을 확인해 주세요."
             )
         elif status_code == 404:
             st.error(
@@ -405,57 +516,86 @@ if analyze_button:
         )
         st.stop()
 
-    # 댓글을 데이터프레임으로 만들고 좋아요 수가 많은 순으로 정렬합니다.
     comments_df = pd.DataFrame(comments)
+
+    # UTC 형식의 API 날짜를 한국 시간 기준으로 바꾼 뒤 보기 쉬운 문자열로 저장합니다.
+    comments_df["작성일"] = pd.to_datetime(
+        comments_df["작성일"],
+        utc=True,
+        errors="coerce",
+    ).dt.tz_convert("Asia/Seoul").dt.strftime("%Y-%m-%d %H:%M")
 
     comments_df = comments_df.sort_values(
         by="좋아요 수",
         ascending=False,
     ).reset_index(drop=True)
 
-    # 순번 열을 따로 만들어 CSV 파일에도 포함되게 합니다.
     comments_df.insert(
         0,
         "순번",
         range(1, len(comments_df) + 1),
     )
 
-    # 분석 결과를 세션 상태에 저장합니다.
-    # 이렇게 하면 CSV 다운로드 버튼을 눌러도 결과가 유지됩니다.
     st.session_state.comments_df = comments_df
     st.session_state.result_video_id = video_id
 
-    st.success("댓글을 성공적으로 가져왔습니다.")
+    if len(comments_df) < int(requested_count):
+        st.info(
+            f"{requested_count:,}개를 요청했지만 공개적으로 가져올 수 있는 댓글은 "
+            f"{len(comments_df):,}개였습니다."
+        )
+    else:
+        st.success(f"댓글 {len(comments_df):,}개를 성공적으로 가져왔습니다.")
 
 
 # ---------------------------------------------------------
-# 저장된 분석 결과 표시
+# 분석 결과 표시
 # ---------------------------------------------------------
 if st.session_state.comments_df is not None:
     comments_df = st.session_state.comments_df
     video_id = st.session_state.result_video_id
 
-    metric_col1, metric_col2 = st.columns([1, 2])
+    st.divider()
+    st.subheader("2. 수집 결과")
+
+    metric_col1, metric_col2, metric_col3 = st.columns(3)
 
     with metric_col1:
         st.metric(
-            label="가져온 댓글 수",
+            label="수집된 댓글",
             value=f"{len(comments_df):,}개",
         )
 
     with metric_col2:
-        st.info(
-            f"영상 ID: `{video_id}`  \n"
-            "댓글은 YouTube API의 relevance 기준으로 가져온 뒤, "
-            "좋아요 수가 많은 순으로 다시 정렬했습니다."
+        st.metric(
+            label="전체 좋아요",
+            value=f"{comments_df['좋아요 수'].sum():,}개",
         )
 
-    # -----------------------------------------------------
-    # CSV 다운로드
-    # -----------------------------------------------------
+    with metric_col3:
+        date_values = pd.to_datetime(
+            comments_df["작성일"],
+            errors="coerce",
+        ).dropna()
+
+        date_range = (
+            f"{date_values.min():%Y-%m-%d} ~ {date_values.max():%Y-%m-%d}"
+            if not date_values.empty
+            else "날짜 정보 없음"
+        )
+
+        st.metric(
+            label="댓글 작성 기간",
+            value=date_range,
+        )
+
+    st.info(
+        f"영상 ID: `{video_id}` · API의 relevance 순서로 수집한 뒤 "
+        "좋아요 수가 많은 순으로 다시 정렬했습니다."
+    )
+
     st.subheader("댓글 데이터 내려받기")
 
-    # utf-8-sig를 사용하면 엑셀에서도 한글이 깨질 가능성이 낮아집니다.
     csv_data = comments_df.to_csv(
         index=False,
         encoding="utf-8-sig",
@@ -469,16 +609,13 @@ if st.session_state.comments_df is not None:
         use_container_width=True,
     )
 
-    # -----------------------------------------------------
-    # 댓글 목록
-    # -----------------------------------------------------
     st.subheader("댓글 목록")
 
     st.dataframe(
         comments_df,
         use_container_width=True,
         hide_index=True,
-        height=600,
+        height=620,
         column_config={
             "순번": st.column_config.NumberColumn(
                 "순번",
@@ -492,16 +629,19 @@ if st.session_state.comments_df is not None:
                 "좋아요 수",
                 format="%d",
             ),
+            "작성일": st.column_config.TextColumn(
+                "작성일",
+                width="medium",
+                help="한국 시간 기준입니다.",
+            ),
         },
     )
 
-    # -----------------------------------------------------
-    # 자주 나온 단어 분석
-    # -----------------------------------------------------
-    st.subheader("자주 나온 단어 상위 20개")
-    st.caption(
-        "댓글 전체를 한국어와 영어 단어로 나누어 집계했습니다. "
-        "한 글자짜리 단어는 제외했습니다."
+    st.divider()
+    st.subheader("3. 어휘 빈도 분석")
+    st.markdown(
+        '<p class="section-note">댓글 전체에서 두 글자 이상인 한국어·영어 단어를 추출합니다.</p>',
+        unsafe_allow_html=True,
     )
 
     top_words_df = count_top_words(
@@ -510,12 +650,8 @@ if st.session_state.comments_df is not None:
     )
 
     if top_words_df.empty:
-        st.warning(
-            "두 글자 이상인 단어를 찾지 못했습니다."
-        )
+        st.warning("두 글자 이상인 단어를 찾지 못했습니다.")
     else:
-        # 가로 막대그래프에서는 작은 값부터 정렬하면
-        # 가장 큰 값이 그래프의 맨 위에 표시됩니다.
         chart_df = top_words_df.sort_values(
             by="빈도",
             ascending=True,
@@ -540,14 +676,11 @@ if st.session_state.comments_df is not None:
 
         fig.update_layout(
             height=650,
-            margin=dict(
-                l=20,
-                r=40,
-                t=20,
-                b=20,
-            ),
+            margin=dict(l=20, r=50, t=20, b=20),
             yaxis_title=None,
             xaxis_title="등장 횟수",
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
         )
 
         st.plotly_chart(
@@ -562,14 +695,7 @@ if st.session_state.comments_df is not None:
                 hide_index=True,
             )
 
-    # -----------------------------------------------------
-    # 워드클라우드
-    # -----------------------------------------------------
     st.subheader("댓글 워드클라우드")
-    st.caption(
-        "댓글 전체에서 두 글자 이상인 한국어와 영어 단어를 추출해 "
-        "워드클라우드로 표시합니다."
-    )
 
     font_path = download_korean_font()
 
@@ -589,8 +715,6 @@ if st.session_state.comments_df is not None:
                 "워드클라우드에 사용할 두 글자 이상의 단어를 찾지 못했습니다."
             )
         else:
-            # WordCloud가 만든 PIL 이미지를 화면에 바로 표시합니다.
-            # matplotlib은 사용하지 않습니다.
             st.image(
                 wordcloud_image,
                 use_container_width=True,
