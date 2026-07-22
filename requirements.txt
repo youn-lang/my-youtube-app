@@ -1,4 +1,3 @@
 requests
 plotly
 wordcloud
-openai
